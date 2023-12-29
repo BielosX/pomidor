@@ -1,0 +1,54 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: nginx-deployment
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: nginx
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: nginx
+    spec:
+      containers:
+        - name: nginx
+          image: nginx:1.25-alpine
+          ports:
+            - containerPort: 80
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: nginx-service
+spec:
+  selector:
+    app.kubernetes.io/name: nginx
+  type: NodePort
+  ports:
+    - protocol: TCP
+      port: 80
+      targetPort: 80
+---
+apiVersion: aws.pomidor/v1
+kind: NetworkLoadBalancer
+metadata:
+  labels:
+    app.kubernetes.io/name: networkloadbalancer
+    app.kubernetes.io/instance: networkloadbalancer-sample
+    app.kubernetes.io/part-of: pomidor
+    app.kubernetes.io/managed-by: kustomize
+    app.kubernetes.io/created-by: pomidor
+  name: networkloadbalancer-sample
+spec:
+  internal: false
+  listeners:
+    - port: 8000
+      protocol: "tcp"
+      service: nginx-service
+  securityGroupIngress:
+    - protocol: "tcp"
+      fromPort: 8000
+      toPort: 8000
+      cidrIp: "0.0.0.0/0"

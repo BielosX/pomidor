@@ -1,0 +1,27 @@
+# permissions for end users to view networkloadbalancers.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  labels:
+    app.kubernetes.io/name: clusterrole
+    app.kubernetes.io/instance: networkloadbalancer-viewer-role
+    app.kubernetes.io/component: rbac
+    app.kubernetes.io/created-by: pomidor
+    app.kubernetes.io/part-of: pomidor
+    app.kubernetes.io/managed-by: kustomize
+  name: networkloadbalancer-viewer-role
+rules:
+- apiGroups:
+  - aws.pomidor
+  resources:
+  - networkloadbalancers
+  verbs:
+  - get
+  - list
+  - watch
+- apiGroups:
+  - aws.pomidor
+  resources:
+  - networkloadbalancers/status
+  verbs:
+  - get

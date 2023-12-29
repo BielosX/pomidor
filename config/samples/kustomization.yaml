@@ -1,0 +1,3 @@
+resources:
+- aws_v1_networkloadbalancer.yaml
+#+kubebuilder:scaffold:manifestskustomizesamples
