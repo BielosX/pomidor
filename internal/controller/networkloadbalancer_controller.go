@@ -19,6 +19,8 @@ package controller
 import (
 	"context"
 	"fmt"
+	"github.com/aws/aws-sdk-go-v2/service/ec2"
+	types2 "github.com/aws/aws-sdk-go-v2/service/ec2/types"
 	"k8s.io/client-go/tools/record"
 
 	elbv2 "github.com/aws/aws-sdk-go-v2/service/elasticloadbalancingv2"
@@ -37,9 +39,11 @@ type NetworkLoadBalancerReconciler struct {
 	Scheme         *runtime.Scheme
 	Recorder       record.EventRecorder
 	ElbClient      *elbv2.Client
+	Ec2Client      *ec2.Client
 	PrivateSubnets []string
 	PublicSubnets  []string
 	ClusterName    string
+	VpcId          string
 }
 
 //+kubebuilder:rbac:groups=aws.pomidor,resources=networkloadbalancers,verbs=get;list;watch;create;update;patch;delete
@@ -60,24 +64,54 @@ func (r *NetworkLoadBalancerReconciler) Reconcile(ctx context.Context, req ctrl.
 
 	if networkLoadBalancer.Status.Arn == "" {
 		lbName := fmt.Sprintf("%s-%s-%s", r.ClusterName, namespacedName.Namespace, namespacedName.Name)
-		lbScheme := types.LoadBalancerSchemeEnumInternal
-		if !networkLoadBalancer.Spec.Internal {
+		isInternal := networkLoadBalancer.Spec.Internal
+		var lbScheme types.LoadBalancerSchemeEnum
+		var subnets []string
+		if !isInternal {
 			lbScheme = types.LoadBalancerSchemeEnumInternetFacing
+			subnets = r.PublicSubnets
+		} else {
+			lbScheme = types.LoadBalancerSchemeEnumInternal
+			subnets = r.PrivateSubnets
 		}
-		out, err := r.ElbClient.CreateLoadBalancer(ctx, &elbv2.CreateLoadBalancerInput{
+		sgDescription := fmt.Sprintf("%s %s NLB Security Group", namespacedName.Namespace, namespacedName.Name)
+		sgName := fmt.Sprintf("%s-%s-%s-nlb-sg", r.ClusterName, namespacedName.Namespace, namespacedName.Name)
+		clusterTag := "Cluster"
+		sgOut, err := r.Ec2Client.CreateSecurityGroup(ctx, &ec2.CreateSecurityGroupInput{
+			Description: &sgDescription,
+			GroupName:   &sgName,
+			VpcId:       &r.VpcId,
+			TagSpecifications: []types2.TagSpecification{
+				{
+					ResourceType: types2.ResourceTypeSecurityGroup,
+					Tags: []types2.Tag{
+						{
+							Key:   &clusterTag,
+							Value: &r.ClusterName,
+						},
+					},
+				},
+			},
+		})
+		if err != nil {
+			logger.Error(err, "Unable to create SecurityGroup")
+			r.Recorder.Event(&networkLoadBalancer, "Error", "Failed", "Unable to create Security Group")
+			return ctrl.Result{}, nil
+		}
+		lbOut, err := r.ElbClient.CreateLoadBalancer(ctx, &elbv2.CreateLoadBalancerInput{
 			Name:           &lbName,
 			Type:           types.LoadBalancerTypeEnumNetwork,
 			Scheme:         lbScheme,
-			Subnets:        nil,
-			SecurityGroups: nil,
+			Subnets:        subnets,
+			SecurityGroups: []string{*sgOut.GroupId},
 		})
 		if err != nil {
 			logger.Error(err, "Unable to create Network Load Balancer")
 			r.Recorder.Event(&networkLoadBalancer, "Error", "Failed", "Unable to create NLB")
 			return ctrl.Result{}, nil
 		}
-		networkLoadBalancer.Status.Arn = *out.LoadBalancers[0].LoadBalancerArn
-		networkLoadBalancer.Status.DnsName = *out.LoadBalancers[0].DNSName
+		networkLoadBalancer.Status.Arn = *lbOut.LoadBalancers[0].LoadBalancerArn
+		networkLoadBalancer.Status.DnsName = *lbOut.LoadBalancers[0].DNSName
 		err = r.Status().Update(ctx, &networkLoadBalancer)
 		if err != nil {
 			logger.Error(err, "Unable to update status")

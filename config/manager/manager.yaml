@@ -61,26 +61,15 @@ spec:
         seccompProfile:
           type: RuntimeDefault
       containers:
-      - env:
-          - name: VPC_ID
-            valueFrom:
-              configMapKeyRef:
-                name: pomidor-config
-                key: vpc-id
-          - name: CLUSTER_NAME
-            valueFrom:
-              configMapKeyRef:
-                name: pomidor-config
-                key: cluster-name
-        command:
+      - command:
           - /manager
         args:
         - --leader-elect
         - --vpc-id
-        - "$(VPC_ID)"
+        - "${VPC_ID}"
         - --cluster-name
-        - "$(CLUSTER_NAME)"
-        image: controller:latest
+        - "${CLUSTER_NAME}"
+        image: "${IMAGE}"
         name: manager
         securityContext:
           allowPrivilegeEscalation: false

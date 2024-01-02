@@ -1,0 +1,15 @@
+Parameters:
+  ClusterName:
+    Type: String
+Resources:
+  Repository:
+    Type: AWS::ECR::Repository
+    Properties:
+      EmptyOnDelete: false
+      ImageTagMutability: IMMUTABLE
+      RepositoryName: !Sub "${ClusterName}/pomidor"
+Outputs:
+  RepositoryArn:
+    Value: !GetAtt Repository.Arn
+  RepositoryUri:
+    Value: !GetAtt Repository.RepositoryUri

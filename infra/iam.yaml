@@ -1,0 +1,63 @@
+Parameters:
+  OidcId:
+    Type: String
+  Namespace:
+    Type: String
+  ServiceAccount:
+    Type: String
+  ClusterName:
+    Type: String
+Resources:
+  IamRole:
+    Type: AWS::IAM::Role
+    Properties:
+      Policies:
+        - PolicyName: PomidorPolicy
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: "Allow"
+                Action:
+                  - "elasticloadbalancing:CreateLoadBalancer"
+                  - "elasticloadbalancing:DeleteLoadBalancer"
+                Resource: !Sub "arn:aws:elasticloadbalancing:${AWS::Region}:${AWS::AccountId}:loadbalancer/net/${ClusterName}-*"
+              - Effect: "Allow"
+                Action: "ec2:DescribeSubnets"
+                Resource: "*"
+              - Effect: "Allow"
+                Action:
+                  - "ec2:DeleteSecurityGroup"
+                  - "ec2:ModifySecurityGroupRules"
+                Resource: !Sub "arn:aws:ec2:${AWS::Region}:${AWS::AccountId}:security-group/*"
+                Condition:
+                  StringEquals:
+                    "aws:ResourceTag/Cluster": "${ClusterName}"
+              - Effect: "Allow"
+                Action:
+                  - "ec2:CreateSecurityGroup"
+                Resource: !Sub "arn:aws:ec2:${AWS::Region}:${AWS::AccountId}:security-group/*"
+                Condition:
+                  StringEquals:
+                    "aws:RequestTag/Cluster": "${ClusterName}"
+      AssumeRolePolicyDocument: !Sub |
+        {
+          "Version": "2012-10-17",
+          "Statement": [
+            {
+              "Effect": "Allow",
+              "Action": "sts:AssumeRoleWithWebIdentity",
+              "Principal": {
+                "Federated": "arn:aws:iam::${AWS::AccountId}:oidc-provider/oidc.eks.${AWS::Region}.amazonaws.com/id/${OidcId}"
+              },
+              "Condition": {
+                "StringEquals": {
+                  "oidc.eks.region-code.amazonaws.com/id/${OidcId}:sub": "system:serviceaccount:${Namespace}:${ServiceAccount}",
+                  "oidc.eks.region-code.amazonaws.com/id/${OidcId}:aud": "sts.amazonaws.com" 
+                }
+              }
+            }
+          ]
+        }
+Outputs:
+  RoleArn:
+    Value: !GetAtt IamRole.Arn

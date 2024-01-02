@@ -55,10 +55,11 @@ func init() {
 	//+kubebuilder:scaffold:scheme
 }
 
-func describeSubnetsWithTag(ec2Client *ec2.Client, ctx context.Context, vpcId string, tagKey string) (*ec2.DescribeSubnetsOutput, error) {
+func describeSubnetsWithTag(ec2Client *ec2.Client, ctx context.Context, vpcId string, tagKey string, nextToken *string) (*ec2.DescribeSubnetsOutput, error) {
 	vpcFilterName := "vpc-id"
 	tagFilterName := "tag-key"
 	return ec2Client.DescribeSubnets(ctx, &ec2.DescribeSubnetsInput{
+		NextToken: nextToken,
 		Filters: []types.Filter{
 			{
 				Name:   &vpcFilterName,
@@ -70,6 +71,25 @@ func describeSubnetsWithTag(ec2Client *ec2.Client, ctx context.Context, vpcId st
 			},
 		},
 	})
+}
+
+func getSubnetIdsByTag(ec2Client *ec2.Client, ctx context.Context, vpcId string, tagKey string) ([]string, error) {
+	var nextToken *string
+	firstPageFetched := false
+	var result []string
+	for nextToken != nil || !firstPageFetched {
+		out, err := describeSubnetsWithTag(ec2Client, ctx, vpcId, tagKey, nextToken)
+		if err != nil {
+			return nil, err
+		}
+		nextToken = out.NextToken
+		subnetIds := funk.Map(out.Subnets, func(subnet types.Subnet) string {
+			return *subnet.SubnetId
+		}).([]string)
+		result = append(result, subnetIds...)
+		firstPageFetched = true
+	}
+	return result, nil
 }
 
 func main() {
@@ -115,22 +135,26 @@ func main() {
 
 	elbClient := elbv2.NewFromConfig(cfg)
 	ec2Client := ec2.NewFromConfig(cfg)
-	out, err := describeSubnetsWithTag(ec2Client, ctx, vpcId, "kubernetes.io/role/internal-elb")
-	privateSubnets := funk.Map(out.Subnets, func(subnet types.Subnet) string {
-		return *subnet.SubnetId
-	}).([]string)
-	out, err = describeSubnetsWithTag(ec2Client, ctx, vpcId, "kubernetes.io/role/elb")
-	publicSubnets := funk.Map(out.Subnets, func(subnet types.Subnet) string {
-		return *subnet.SubnetId
-	}).([]string)
+	privateSubnets, err := getSubnetIdsByTag(ec2Client, ctx, vpcId, "kubernetes.io/role/internal-elb")
+	if err != nil {
+		setupLog.Error(err, "Unable to fetch private subnets")
+		os.Exit(1)
+	}
+	publicSubnets, err := getSubnetIdsByTag(ec2Client, ctx, vpcId, "kubernetes.io/role/elb")
+	if err != nil {
+		setupLog.Error(err, "Unable to fetch public subnets")
+		os.Exit(1)
+	}
 
 	if err = (&controller.NetworkLoadBalancerReconciler{
 		Client:         mgr.GetClient(),
 		Scheme:         mgr.GetScheme(),
 		Recorder:       mgr.GetEventRecorderFor("network-load-balancer-controller"),
 		ElbClient:      elbClient,
+		Ec2Client:      ec2Client,
 		PrivateSubnets: privateSubnets,
 		PublicSubnets:  publicSubnets,
+		VpcId:          vpcId,
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "NetworkLoadBalancer")
 		os.Exit(1)
