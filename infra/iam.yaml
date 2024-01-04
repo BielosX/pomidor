@@ -39,6 +39,9 @@ Resources:
                 Condition:
                   StringEquals:
                     "aws:RequestTag/Cluster": "${ClusterName}"
+              - Effect: "Allow"
+                Action: "eks:DescribeCluster"
+                Resource: !Sub "arn:aws:eks:${AWS::Region}:${AWS::AccountId}:cluster/${ClusterName}"
       AssumeRolePolicyDocument: !Sub |
         {
           "Version": "2012-10-17",
@@ -51,8 +54,8 @@ Resources:
               },
               "Condition": {
                 "StringEquals": {
-                  "oidc.eks.region-code.amazonaws.com/id/${OidcId}:sub": "system:serviceaccount:${Namespace}:${ServiceAccount}",
-                  "oidc.eks.region-code.amazonaws.com/id/${OidcId}:aud": "sts.amazonaws.com" 
+                  "oidc.eks.${AWS::Region}.amazonaws.com/id/${OidcId}:sub": "system:serviceaccount:${Namespace}:${ServiceAccount}",
+                  "oidc.eks.${AWS::Region}.amazonaws.com/id/${OidcId}:aud": "sts.amazonaws.com" 
                 }
               }
             }

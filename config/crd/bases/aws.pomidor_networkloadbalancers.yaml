@@ -14,7 +14,14 @@ spec:
     singular: networkloadbalancer
   scope: Namespaced
   versions:
-  - name: v1
+  - additionalPrinterColumns:
+    - jsonPath: .status.arn
+      name: Arn
+      type: string
+    - jsonPath: .status.dnsName
+      name: DnsName
+      type: string
+    name: v1
     schema:
       openAPIV3Schema:
         description: NetworkLoadBalancer is the Schema for the networkloadbalancers
@@ -80,9 +87,6 @@ spec:
                 type: string
               dnsName:
                 type: string
-            required:
-            - arn
-            - dnsName
             type: object
         type: object
     served: true

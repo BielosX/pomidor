@@ -62,7 +62,7 @@ func (r *NetworkLoadBalancerReconciler) Reconcile(ctx context.Context, req ctrl.
 		return ctrl.Result{}, err
 	}
 
-	if networkLoadBalancer.Status.Arn == "" {
+	if networkLoadBalancer.Status.Arn == nil {
 		lbName := fmt.Sprintf("%s-%s-%s", r.ClusterName, namespacedName.Namespace, namespacedName.Name)
 		isInternal := networkLoadBalancer.Spec.Internal
 		var lbScheme types.LoadBalancerSchemeEnum
@@ -110,8 +110,8 @@ func (r *NetworkLoadBalancerReconciler) Reconcile(ctx context.Context, req ctrl.
 			r.Recorder.Event(&networkLoadBalancer, "Error", "Failed", "Unable to create NLB")
 			return ctrl.Result{}, nil
 		}
-		networkLoadBalancer.Status.Arn = *lbOut.LoadBalancers[0].LoadBalancerArn
-		networkLoadBalancer.Status.DnsName = *lbOut.LoadBalancers[0].DNSName
+		networkLoadBalancer.Status.Arn = lbOut.LoadBalancers[0].LoadBalancerArn
+		networkLoadBalancer.Status.DnsName = lbOut.LoadBalancers[0].DNSName
 		err = r.Status().Update(ctx, &networkLoadBalancer)
 		if err != nil {
 			logger.Error(err, "Unable to update status")

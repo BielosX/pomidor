@@ -42,14 +42,16 @@ type NetworkLoadBalancerSpec struct {
 
 // NetworkLoadBalancerStatus defines the observed state of NetworkLoadBalancer
 type NetworkLoadBalancerStatus struct {
-	Arn     string `json:"arn"`
-	DnsName string `json:"dnsName"`
+	Arn     *string `json:"arn,omitempty"`
+	DnsName *string `json:"dnsName,omitempty"`
 }
 
 //+kubebuilder:object:root=true
 //+kubebuilder:subresource:status
 
 // NetworkLoadBalancer is the Schema for the networkloadbalancers API
+// +kubebuilder:printcolumn:name="Arn",type=string,JSONPath=`.status.arn`
+// +kubebuilder:printcolumn:name="DnsName",type=string,JSONPath=`.status.dnsName`
 type NetworkLoadBalancer struct {
 	metav1.TypeMeta   `json:",inline"`
 	metav1.ObjectMeta `json:"metadata,omitempty"`

@@ -19,6 +19,7 @@ package main
 import (
 	"context"
 	"flag"
+	"fmt"
 	"github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/service/ec2"
 	"github.com/aws/aws-sdk-go-v2/service/ec2/types"
@@ -29,6 +30,7 @@ import (
 	// to ensure that exec-entrypoint and run can make use of them.
 	_ "k8s.io/client-go/plugin/pkg/client/auth"
 
+	eks "github.com/aws/aws-sdk-go-v2/service/eks"
 	elbv2 "github.com/aws/aws-sdk-go-v2/service/elasticloadbalancingv2"
 	"k8s.io/apimachinery/pkg/runtime"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
@@ -55,7 +57,11 @@ func init() {
 	//+kubebuilder:scaffold:scheme
 }
 
-func describeSubnetsWithTag(ec2Client *ec2.Client, ctx context.Context, vpcId string, tagKey string, nextToken *string) (*ec2.DescribeSubnetsOutput, error) {
+func describeSubnetsWithTagKey(ec2Client *ec2.Client,
+	ctx context.Context,
+	vpcId string,
+	tagKey string,
+	nextToken *string) (*ec2.DescribeSubnetsOutput, error) {
 	vpcFilterName := "vpc-id"
 	tagFilterName := "tag-key"
 	return ec2Client.DescribeSubnets(ctx, &ec2.DescribeSubnetsInput{
@@ -73,12 +79,12 @@ func describeSubnetsWithTag(ec2Client *ec2.Client, ctx context.Context, vpcId st
 	})
 }
 
-func getSubnetIdsByTag(ec2Client *ec2.Client, ctx context.Context, vpcId string, tagKey string) ([]string, error) {
+func getSubnetIdsByTagKey(ec2Client *ec2.Client, ctx context.Context, vpcId string, tagKey string) ([]string, error) {
 	var nextToken *string
 	firstPageFetched := false
 	var result []string
 	for nextToken != nil || !firstPageFetched {
-		out, err := describeSubnetsWithTag(ec2Client, ctx, vpcId, tagKey, nextToken)
+		out, err := describeSubnetsWithTagKey(ec2Client, ctx, vpcId, tagKey, nextToken)
 		if err != nil {
 			return nil, err
 		}
@@ -96,14 +102,12 @@ func main() {
 	var metricsAddr string
 	var enableLeaderElection bool
 	var probeAddr string
-	var vpcId string
 	var clusterName string
 	flag.StringVar(&metricsAddr, "metrics-bind-address", ":8080", "The address the metric endpoint binds to.")
 	flag.StringVar(&probeAddr, "health-probe-bind-address", ":8081", "The address the probe endpoint binds to.")
 	flag.BoolVar(&enableLeaderElection, "leader-elect", false,
 		"Enable leader election for controller manager. "+
 			"Enabling this will ensure there is only one active controller manager.")
-	flag.StringVar(&vpcId, "vpc-id", "", "Cluster VPC ID")
 	flag.StringVar(&clusterName, "cluster-name", "", "AWS EKS Cluster Name")
 	opts := zap.Options{
 		Development: true,
@@ -135,16 +139,31 @@ func main() {
 
 	elbClient := elbv2.NewFromConfig(cfg)
 	ec2Client := ec2.NewFromConfig(cfg)
-	privateSubnets, err := getSubnetIdsByTag(ec2Client, ctx, vpcId, "kubernetes.io/role/internal-elb")
+	eksClient := eks.NewFromConfig(cfg)
+	eksOut, err := eksClient.DescribeCluster(ctx, &eks.DescribeClusterInput{
+		Name: &clusterName,
+	})
+	if err != nil {
+		setupLog.Error(err, "Unable to describe cluster")
+		os.Exit(1)
+	}
+	vpcId := *eksOut.Cluster.ResourcesVpcConfig.VpcId
+	privateSubnets, err := getSubnetIdsByTagKey(ec2Client, ctx, vpcId, "kubernetes.io/role/internal-elb")
 	if err != nil {
 		setupLog.Error(err, "Unable to fetch private subnets")
 		os.Exit(1)
 	}
-	publicSubnets, err := getSubnetIdsByTag(ec2Client, ctx, vpcId, "kubernetes.io/role/elb")
+	publicSubnets, err := getSubnetIdsByTagKey(ec2Client, ctx, vpcId, "kubernetes.io/role/elb")
 	if err != nil {
 		setupLog.Error(err, "Unable to fetch public subnets")
 		os.Exit(1)
 	}
+
+	setupLog.Info(fmt.Sprintf("Running in cluster %s, VpcId: %s, public subnets: %v, private subnets: %v",
+		clusterName,
+		vpcId,
+		publicSubnets,
+		privateSubnets))
 
 	if err = (&controller.NetworkLoadBalancerReconciler{
 		Client:         mgr.GetClient(),
