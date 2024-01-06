@@ -5,7 +5,7 @@ Resources:
   Repository:
     Type: AWS::ECR::Repository
     Properties:
-      EmptyOnDelete: false
+      EmptyOnDelete: true
       ImageTagMutability: IMMUTABLE
       RepositoryName: !Sub "${ClusterName}/pomidor"
 Outputs:

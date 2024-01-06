@@ -87,6 +87,10 @@ spec:
                 type: string
               dnsName:
                 type: string
+              securityGroupIds:
+                items:
+                  type: string
+                type: array
             type: object
         type: object
     served: true

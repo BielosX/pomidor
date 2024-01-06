@@ -174,6 +174,7 @@ func main() {
 		PrivateSubnets: privateSubnets,
 		PublicSubnets:  publicSubnets,
 		VpcId:          vpcId,
+		ClusterName:    clusterName,
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "NetworkLoadBalancer")
 		os.Exit(1)

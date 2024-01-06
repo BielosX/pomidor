@@ -20,7 +20,12 @@ Resources:
                 Action:
                   - "elasticloadbalancing:CreateLoadBalancer"
                   - "elasticloadbalancing:DeleteLoadBalancer"
-                Resource: !Sub "arn:aws:elasticloadbalancing:${AWS::Region}:${AWS::AccountId}:loadbalancer/net/${ClusterName}-*"
+                Resource: !Sub "arn:aws:elasticloadbalancing:${AWS::Region}:${AWS::AccountId}:loadbalancer/net/*"
+              - Effect: "Allow"
+                Action:
+                  - "elasticloadbalancing:AddTags"
+                  - "elasticloadbalancing:RemoveTags"
+                Resource: !Sub "arn:aws:elasticloadbalancing:${AWS::Region}:${AWS::AccountId}:loadbalancer/net/*"
               - Effect: "Allow"
                 Action: "ec2:DescribeSubnets"
                 Resource: "*"
@@ -29,19 +34,20 @@ Resources:
                   - "ec2:DeleteSecurityGroup"
                   - "ec2:ModifySecurityGroupRules"
                 Resource: !Sub "arn:aws:ec2:${AWS::Region}:${AWS::AccountId}:security-group/*"
-                Condition:
-                  StringEquals:
-                    "aws:ResourceTag/Cluster": "${ClusterName}"
               - Effect: "Allow"
                 Action:
                   - "ec2:CreateSecurityGroup"
-                Resource: !Sub "arn:aws:ec2:${AWS::Region}:${AWS::AccountId}:security-group/*"
-                Condition:
-                  StringEquals:
-                    "aws:RequestTag/Cluster": "${ClusterName}"
+                Resource:
+                  - !Sub "arn:aws:ec2:${AWS::Region}:${AWS::AccountId}:security-group/*"
+                  - !Sub "arn:aws:ec2:${AWS::Region}:${AWS::AccountId}:vpc/*"
               - Effect: "Allow"
                 Action: "eks:DescribeCluster"
                 Resource: !Sub "arn:aws:eks:${AWS::Region}:${AWS::AccountId}:cluster/${ClusterName}"
+              - Effect: "Allow"
+                Action: "ec2:CreateTags"
+                Resource:
+                  - !Sub "arn:aws:ec2:${AWS::Region}:${AWS::AccountId}:security-group/*"
+                  - !Sub "arn:aws:elasticloadbalancing:${AWS::Region}:${AWS::AccountId}:loadbalancer/net/${ClusterName}-*"
       AssumeRolePolicyDocument: !Sub |
         {
           "Version": "2012-10-17",

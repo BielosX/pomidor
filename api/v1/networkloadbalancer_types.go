@@ -42,8 +42,9 @@ type NetworkLoadBalancerSpec struct {
 
 // NetworkLoadBalancerStatus defines the observed state of NetworkLoadBalancer
 type NetworkLoadBalancerStatus struct {
-	Arn     *string `json:"arn,omitempty"`
-	DnsName *string `json:"dnsName,omitempty"`
+	Arn              *string  `json:"arn,omitempty"`
+	DnsName          *string  `json:"dnsName,omitempty"`
+	SecurityGroupIds []string `json:"securityGroupIds,omitempty"`
 }
 
 //+kubebuilder:object:root=true

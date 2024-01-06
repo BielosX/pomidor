@@ -114,6 +114,7 @@ function uninstall() {
     echo "Cluster Name should be specified"
     exit 255
   fi
+  make undeploy
   pushd infra
   delete_stack "${CLUSTER_NAME}-pomidor-iam"
   delete_stack "${CLUSTER_NAME}-pomidor-ecr"
