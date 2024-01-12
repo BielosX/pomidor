@@ -20,12 +20,27 @@ Resources:
                 Action:
                   - "elasticloadbalancing:CreateLoadBalancer"
                   - "elasticloadbalancing:DeleteLoadBalancer"
+                  - "elasticloadbalancing:CreateListener"
                 Resource: !Sub "arn:aws:elasticloadbalancing:${AWS::Region}:${AWS::AccountId}:loadbalancer/net/*"
+              - Effect: "Allow"
+                Action:
+                  - "elasticloadbalancing:DeleteListener"
+                  - "elasticloadbalancing:ModifyListener"
+                  - "elasticloadbalancing:CreateRule"
+                Resource: !Sub "arn:aws:elasticloadbalancing:${AWS::Region}:${AWS::AccountId}:listener/net/*"
+              - Effect: "Allow"
+                Action:
+                  - "elasticloadbalancing:DeleteRule"
+                  - "elasticloadbalancing:ModifyRule"
+                Resource: !Sub "arn:aws:elasticloadbalancing:${AWS::Region}:${AWS::AccountId}:listener-rule/net/*"
               - Effect: "Allow"
                 Action:
                   - "elasticloadbalancing:AddTags"
                   - "elasticloadbalancing:RemoveTags"
-                Resource: !Sub "arn:aws:elasticloadbalancing:${AWS::Region}:${AWS::AccountId}:loadbalancer/net/*"
+                Resource:
+                  - !Sub "arn:aws:elasticloadbalancing:${AWS::Region}:${AWS::AccountId}:loadbalancer/net/*"
+                  - !Sub "arn:aws:elasticloadbalancing:${AWS::Region}:${AWS::AccountId}:targetgroup/*"
+                  - !Sub "arn:aws:elasticloadbalancing:${AWS::Region}:${AWS::AccountId}:listener/net/*"
               - Effect: "Allow"
                 Action: "ec2:DescribeSubnets"
                 Resource: "*"
@@ -48,6 +63,41 @@ Resources:
                 Resource:
                   - !Sub "arn:aws:ec2:${AWS::Region}:${AWS::AccountId}:security-group/*"
                   - !Sub "arn:aws:elasticloadbalancing:${AWS::Region}:${AWS::AccountId}:loadbalancer/net/${ClusterName}-*"
+              - Effect: "Allow"
+                Action:
+                  - "ec2:AuthorizeSecurityGroupIngress"
+                  - "ec2:AuthorizeSecurityGroupEgress"
+                  - "ec2:RevokeSecurityGroupEgress"
+                  - "ec2:RevokeSecurityGroupIngress"
+                Resource:
+                  - !Sub "arn:aws:ec2:${AWS::Region}:${AWS::AccountId}:security-group/*"
+                  - !Sub "arn:aws:ec2:${AWS::Region}:${AWS::AccountId}:security-group-rule/*"
+              - Effect: "Allow"
+                Action:
+                  - "ec2:DescribeSecurityGroupRules"
+                  - "ec2:DescribeSecurityGroups"
+                Resource: "*"
+              - Effect: "Allow"
+                Action:
+                  - "elasticloadbalancing:CreateTargetGroup"
+                  - "elasticloadbalancing:ModifyTargetGroup"
+                  - "elasticloadbalancing:DeleteTargetGroup"
+                Resource: !Sub "arn:aws:elasticloadbalancing:${AWS::Region}:${AWS::AccountId}:targetgroup/*"
+              - Effect: "Allow"
+                Action:
+                  - "elasticloadbalancing:DescribeListeners"
+                Resource: "*"
+              - Effect: "Allow"
+                Action:
+                  - "autoscaling:AttachTrafficSources"
+                  - "autoscaling:DetachTrafficSources"
+                Resource: !Sub "arn:aws:autoscaling:${AWS::Region}:${AWS::AccountId}:autoScalingGroup:*:autoScalingGroupName/*"
+              - Effect: "Allow"
+                Action: "autoscaling:DescribeAutoScalingGroups"
+                Resource: "*"
+              - Effect: "Allow"
+                Action: "elasticloadbalancing:DescribeListeners"
+                Resource: "*"
       AssumeRolePolicyDocument: !Sub |
         {
           "Version": "2012-10-17",

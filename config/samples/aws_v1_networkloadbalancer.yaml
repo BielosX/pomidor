@@ -28,7 +28,12 @@ spec:
   type: NodePort
   ports:
     - protocol: TCP
+      name: first
       port: 80
+      targetPort: 80
+    - protocol: TCP
+      name: second
+      port: 8080
       targetPort: 80
 ---
 apiVersion: aws.pomidor/v1
@@ -45,10 +50,19 @@ spec:
   internal: false
   listeners:
     - port: 8000
-      protocol: "tcp"
+      servicePort: 80
+      protocol: TCP
+      service: nginx-service
+    - port: 8080
+      servicePort: 80
+      protocol: TCP
+      service: nginx-service
+    - port: 8090
+      servicePort: 8080
+      protocol: TCP
       service: nginx-service
   securityGroupIngress:
-    - protocol: "tcp"
+    - protocol: TCP
       fromPort: 8000
       toPort: 8000
       cidrIp: "0.0.0.0/0"

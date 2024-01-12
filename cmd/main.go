@@ -21,6 +21,7 @@ import (
 	"flag"
 	"fmt"
 	"github.com/aws/aws-sdk-go-v2/config"
+	"github.com/aws/aws-sdk-go-v2/service/autoscaling"
 	"github.com/aws/aws-sdk-go-v2/service/ec2"
 	"github.com/aws/aws-sdk-go-v2/service/ec2/types"
 	"github.com/thoas/go-funk"
@@ -30,6 +31,7 @@ import (
 	// to ensure that exec-entrypoint and run can make use of them.
 	_ "k8s.io/client-go/plugin/pkg/client/auth"
 
+	asgtypes "github.com/aws/aws-sdk-go-v2/service/autoscaling/types"
 	eks "github.com/aws/aws-sdk-go-v2/service/eks"
 	elbv2 "github.com/aws/aws-sdk-go-v2/service/elasticloadbalancingv2"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -98,6 +100,41 @@ func getSubnetIdsByTagKey(ec2Client *ec2.Client, ctx context.Context, vpcId stri
 	return result, nil
 }
 
+func getClusterAutoscalingGroupsPage(asgClient *autoscaling.Client,
+	ctx context.Context,
+	clusterName string,
+	nextToken *string) (*autoscaling.DescribeAutoScalingGroupsOutput, error) {
+	key := "tag:eks:cluster-name"
+	return asgClient.DescribeAutoScalingGroups(ctx, &autoscaling.DescribeAutoScalingGroupsInput{
+		Filters: []asgtypes.Filter{
+			{
+				Name:   &key,
+				Values: []string{clusterName},
+			},
+		},
+		NextToken: nextToken,
+	})
+}
+
+func getClusterAutoscalingGroups(asgClient *autoscaling.Client, ctx context.Context, clusterName string) ([]string, error) {
+	var nextToken *string
+	firstPageFetched := false
+	var result []string
+	for nextToken != nil || !firstPageFetched {
+		firstPageFetched = true
+		out, err := getClusterAutoscalingGroupsPage(asgClient, ctx, clusterName, nextToken)
+		if err != nil {
+			return nil, err
+		}
+		names := funk.Map(out.AutoScalingGroups, func(asg asgtypes.AutoScalingGroup) string {
+			return *asg.AutoScalingGroupName
+		}).([]string)
+		result = append(result, names...)
+	}
+
+	return result, nil
+}
+
 func main() {
 	var metricsAddr string
 	var enableLeaderElection bool
@@ -140,6 +177,7 @@ func main() {
 	elbClient := elbv2.NewFromConfig(cfg)
 	ec2Client := ec2.NewFromConfig(cfg)
 	eksClient := eks.NewFromConfig(cfg)
+	asgClient := autoscaling.NewFromConfig(cfg)
 	eksOut, err := eksClient.DescribeCluster(ctx, &eks.DescribeClusterInput{
 		Name: &clusterName,
 	})
@@ -148,6 +186,7 @@ func main() {
 		os.Exit(1)
 	}
 	vpcId := *eksOut.Cluster.ResourcesVpcConfig.VpcId
+	clusterSgId := *eksOut.Cluster.ResourcesVpcConfig.ClusterSecurityGroupId
 	privateSubnets, err := getSubnetIdsByTagKey(ec2Client, ctx, vpcId, "kubernetes.io/role/internal-elb")
 	if err != nil {
 		setupLog.Error(err, "Unable to fetch private subnets")
@@ -159,11 +198,23 @@ func main() {
 		os.Exit(1)
 	}
 
+	if err != nil {
+		setupLog.Error(err, "Unable to fetch EKS Cluster security group")
+		os.Exit(1)
+	}
+
 	setupLog.Info(fmt.Sprintf("Running in cluster %s, VpcId: %s, public subnets: %v, private subnets: %v",
 		clusterName,
 		vpcId,
 		publicSubnets,
 		privateSubnets))
+
+	autoScalingGroupNames, err := getClusterAutoscalingGroups(asgClient, ctx, clusterName)
+
+	if err != nil {
+		setupLog.Error(err, "Unable to get cluster auto scaling groups")
+		os.Exit(1)
+	}
 
 	if err = (&controller.NetworkLoadBalancerReconciler{
 		Client:         mgr.GetClient(),
@@ -171,10 +222,13 @@ func main() {
 		Recorder:       mgr.GetEventRecorderFor("network-load-balancer-controller"),
 		ElbClient:      elbClient,
 		Ec2Client:      ec2Client,
+		AsgClient:      asgClient,
 		PrivateSubnets: privateSubnets,
 		PublicSubnets:  publicSubnets,
 		VpcId:          vpcId,
 		ClusterName:    clusterName,
+		ClusterSgId:    clusterSgId,
+		NodesAsgNames:  autoScalingGroupNames,
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "NetworkLoadBalancer")
 		os.Exit(1)

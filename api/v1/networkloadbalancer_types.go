@@ -21,16 +21,20 @@ import (
 )
 
 type ListenerSpec struct {
-	Port     int    `json:"port"`
-	Protocol string `json:"protocol"`
-	Service  string `json:"service,omitempty"`
+	Port int `json:"port"`
+	// +kubebuilder:validation:Enum=TCP;UDP
+	Protocol    string `json:"protocol"`
+	Service     string `json:"service,omitempty"`
+	ServicePort int    `json:"servicePort,omitempty"`
 }
 
 type SecurityGroupIngressSpec struct {
-	Protocol string `json:"protocol"`
-	FromPort int    `json:"fromPort"`
-	ToPort   int    `json:"toPort"`
-	CidrIp   string `json:"cidrIp"`
+	// +kubebuilder:validation:Enum=TCP;UDP
+	Protocol              string  `json:"protocol"`
+	FromPort              int     `json:"fromPort"`
+	ToPort                int     `json:"toPort"`
+	CidrIp                *string `json:"cidrIp,omitempty"`
+	SourceSecurityGroupId *string `json:"sourceSecurityGroupId,omitempty"`
 }
 
 // NetworkLoadBalancerSpec defines the desired state of NetworkLoadBalancer
@@ -44,6 +48,7 @@ type NetworkLoadBalancerSpec struct {
 type NetworkLoadBalancerStatus struct {
 	Arn              *string  `json:"arn,omitempty"`
 	DnsName          *string  `json:"dnsName,omitempty"`
+	ClusterSgRuleId  *string  `json:"clusterSgRuleId,omitempty"`
 	SecurityGroupIds []string `json:"securityGroupIds,omitempty"`
 }
 

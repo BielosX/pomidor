@@ -50,9 +50,14 @@ spec:
                     port:
                       type: integer
                     protocol:
+                      enum:
+                      - TCP
+                      - UDP
                       type: string
                     service:
                       type: string
+                    servicePort:
+                      type: integer
                   required:
                   - port
                   - protocol
@@ -66,11 +71,15 @@ spec:
                     fromPort:
                       type: integer
                     protocol:
+                      enum:
+                      - TCP
+                      - UDP
+                      type: string
+                    sourceSecurityGroupId:
                       type: string
                     toPort:
                       type: integer
                   required:
-                  - cidrIp
                   - fromPort
                   - protocol
                   - toPort
@@ -84,6 +93,8 @@ spec:
             description: NetworkLoadBalancerStatus defines the observed state of NetworkLoadBalancer
             properties:
               arn:
+                type: string
+              clusterSgRuleId:
                 type: string
               dnsName:
                 type: string
