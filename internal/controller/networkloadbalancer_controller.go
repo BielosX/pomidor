@@ -152,7 +152,6 @@ func (r *NetworkLoadBalancerReconciler) deleteExternalResources(ctx context.Cont
 	nlbArn := networkLoadBalancer.Status.Arn
 	securityGroupIds := networkLoadBalancer.Status.SecurityGroupIds
 	clusterSgRuleId := networkLoadBalancer.Status.ClusterSgRuleId
-	sourceType := "elbv2"
 	_, err := r.Ec2Client.RevokeSecurityGroupIngress(ctx, &ec2.RevokeSecurityGroupIngressInput{
 		GroupId:              &r.ClusterSgId,
 		SecurityGroupRuleIds: []string{*clusterSgRuleId},
@@ -173,7 +172,6 @@ func (r *NetworkLoadBalancerReconciler) deleteExternalResources(ctx context.Cont
 				TrafficSources: []asgtypes.TrafficSourceIdentifier{
 					{
 						Identifier: &arn,
-						Type:       &sourceType,
 					},
 				},
 			})
@@ -238,6 +236,7 @@ func (r *NetworkLoadBalancerReconciler) createIngressRules(ctx context.Context,
 			ipPermission.UserIdGroupPairs = []ec2types.UserIdGroupPair{
 				{
 					GroupId: ingress.SourceSecurityGroupId,
+					VpcId:   &r.VpcId,
 				},
 			}
 			ruleName = fmt.Sprintf("ingress-%d-%d-%s-%s", fromPort, toPort, protocol, *ingress.SourceSecurityGroupId)
@@ -264,15 +263,18 @@ func (r *NetworkLoadBalancerReconciler) addClusterSecurityGroupIngressRule(ctx c
 		UserIdGroupPairs: []ec2types.UserIdGroupPair{
 			{
 				GroupId: nlbSecurityGroupId,
+				VpcId:   &r.VpcId,
 			},
 		},
 	}
 	ruleName := fmt.Sprintf("ingress-%d-%d-%s-%s", fromPort, toPort, protocol, *nlbSecurityGroupId)
+	logger.Info(fmt.Sprintf("Creating cluster security group %s ingress rule %s", r.ClusterSgId, ruleName))
 	ruleId, err := aws.AuthorizeSecurityGroup(r.Ec2Client, ctx, &r.ClusterSgId, false, ruleName, []ec2types.IpPermission{ipPermission})
 	if err != nil {
 		logger.Error(err, "Unable to add Cluster SG Rule")
 		return nil, err
 	}
+	logger.Info(fmt.Sprintf("Cluster SG %s ingress rule %s created", r.ClusterSgId, *ruleId))
 	return ruleId, nil
 }
 
@@ -289,6 +291,7 @@ func (r *NetworkLoadBalancerReconciler) createEgressRule(ctx context.Context,
 		UserIdGroupPairs: []ec2types.UserIdGroupPair{
 			{
 				GroupId: &r.ClusterSgId,
+				VpcId:   &r.VpcId,
 			},
 		},
 	}
@@ -386,6 +389,8 @@ func (r *NetworkLoadBalancerReconciler) createListeners(ctx context.Context,
 	healthCheckInterval := int32(10)
 	healthyThreshold := int32(2)
 	for _, listener := range networkLoadBalancer.Spec.Listeners {
+		logger.Info(fmt.Sprintf("Initializing listener with port %d protocol %s target service %s target service port %d",
+			listener.Port, listener.Protocol, listener.Service, listener.ServicePort))
 		var targetService v1.Service
 		namespacedName := types.NamespacedName{
 			Name:      listener.Service,
@@ -424,6 +429,20 @@ func (r *NetworkLoadBalancerReconciler) createListeners(ctx context.Context,
 				}
 				targetGroupArn := tgOut.TargetGroups[0].TargetGroupArn
 				logger.Info(fmt.Sprintf("Target group %s created", *targetGroupArn))
+				for _, asg := range r.NodesAsgNames {
+					logger.Info(fmt.Sprintf("Trying to attach target group %s to ASG %s", *targetGroupArn, asg))
+					_, err := r.AsgClient.AttachTrafficSources(ctx, &autoscaling.AttachTrafficSourcesInput{
+						AutoScalingGroupName: &asg,
+						TrafficSources: []asgtypes.TrafficSourceIdentifier{
+							{
+								Identifier: targetGroupArn,
+							},
+						},
+					})
+					if err != nil {
+						return err
+					}
+				}
 				elbOut, err := r.ElbClient.CreateListener(ctx, &elbv2.CreateListenerInput{
 					LoadBalancerArn: nlbArn,
 					Tags:            funk.Map(commonTags, func(tag Tag) elb2types.Tag { return tag.asElbTag() }).([]elb2types.Tag),
@@ -442,6 +461,9 @@ func (r *NetworkLoadBalancerReconciler) createListeners(ctx context.Context,
 				listenerArn := elbOut.Listeners[0].ListenerArn
 				logger.Info(fmt.Sprintf("Listener %s created", *listenerArn))
 				break
+			} else {
+				logger.Info(fmt.Sprintf("Listener with port %d and protocol %s doesn't match service %s with port %d and protocol %s",
+					listener.Port, listener.Protocol, targetService.Name, servicePort.Port, servicePort.Protocol))
 			}
 		}
 	}

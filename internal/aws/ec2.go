@@ -60,39 +60,41 @@ func AuthorizeSecurityGroup(ec2Client *ec2.Client,
 	ruleName string,
 	ipPermissions []types.IpPermission) (*string, error) {
 	logger := log.FromContext(ctx)
-	var err error
+	var actionError error
 	var ruleId *string
+	tagSpec := types.TagSpecification{
+		ResourceType: types.ResourceTypeSecurityGroupRule,
+		Tags: []types.Tag{
+			{
+				Key:   &groupRuleTagName,
+				Value: &ruleName,
+			},
+		},
+	}
 	if !egress {
 		out, err := ec2Client.AuthorizeSecurityGroupIngress(ctx, &ec2.AuthorizeSecurityGroupIngressInput{
-			GroupId:       gropId,
-			IpPermissions: ipPermissions,
-			TagSpecifications: []types.TagSpecification{
-				{
-					ResourceType: types.ResourceTypeSecurityGroupRule,
-					Tags: []types.Tag{
-						{
-							Key:   &groupRuleTagName,
-							Value: &ruleName,
-						},
-					},
-				},
-			},
+			GroupId:           gropId,
+			IpPermissions:     ipPermissions,
+			TagSpecifications: []types.TagSpecification{tagSpec},
 		})
 		if err == nil {
 			ruleId = out.SecurityGroupRules[0].SecurityGroupRuleId
 		}
+		actionError = err
 	} else {
 		out, err := ec2Client.AuthorizeSecurityGroupEgress(ctx, &ec2.AuthorizeSecurityGroupEgressInput{
-			GroupId:       gropId,
-			IpPermissions: ipPermissions,
+			GroupId:           gropId,
+			IpPermissions:     ipPermissions,
+			TagSpecifications: []types.TagSpecification{tagSpec},
 		})
 		if err == nil {
 			ruleId = out.SecurityGroupRules[0].SecurityGroupRuleId
 		}
+		actionError = err
 	}
-	if err != nil {
+	if actionError != nil {
 		var apiErr smithy.APIError
-		errors.As(err, &apiErr)
+		errors.As(actionError, &apiErr)
 		if "InvalidPermission.Duplicate" == apiErr.ErrorCode() {
 			logger.Info("Security Group Rule already exists")
 			filter := "tag:Name"
@@ -109,7 +111,7 @@ func AuthorizeSecurityGroup(ec2Client *ec2.Client,
 			}
 			ruleId = out.SecurityGroupRules[0].SecurityGroupRuleId
 		} else {
-			return nil, err
+			return nil, actionError
 		}
 	}
 	return ruleId, nil

@@ -62,7 +62,7 @@ Resources:
                 Action: "ec2:CreateTags"
                 Resource:
                   - !Sub "arn:aws:ec2:${AWS::Region}:${AWS::AccountId}:security-group/*"
-                  - !Sub "arn:aws:elasticloadbalancing:${AWS::Region}:${AWS::AccountId}:loadbalancer/net/${ClusterName}-*"
+                  - !Sub "arn:aws:ec2:${AWS::Region}:${AWS::AccountId}:security-group-rule/*"
               - Effect: "Allow"
                 Action:
                   - "ec2:AuthorizeSecurityGroupIngress"
@@ -97,6 +97,9 @@ Resources:
                 Resource: "*"
               - Effect: "Allow"
                 Action: "elasticloadbalancing:DescribeListeners"
+                Resource: "*"
+              - Effect: "Allow"
+                Action: "elasticloadbalancing:DescribeTargetGroups"
                 Resource: "*"
       AssumeRolePolicyDocument: !Sub |
         {
