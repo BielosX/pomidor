@@ -405,7 +405,8 @@ func (r *NetworkLoadBalancerReconciler) createListeners(ctx context.Context,
 		}
 		for _, servicePort := range targetService.Spec.Ports {
 			listenerPort := int32(listener.Port)
-			if listenerPort == servicePort.Port && v1.Protocol(listener.Protocol) == servicePort.Protocol {
+			listenerServicePort := int32(listener.ServicePort)
+			if listenerServicePort == servicePort.Port && v1.Protocol(listener.Protocol) == servicePort.Protocol {
 				suffix := fmt.Sprintf("%s-%s-%s-%d",
 					targetService.Namespace,
 					targetService.Name,
@@ -462,8 +463,8 @@ func (r *NetworkLoadBalancerReconciler) createListeners(ctx context.Context,
 				logger.Info(fmt.Sprintf("Listener %s created", *listenerArn))
 				break
 			} else {
-				logger.Info(fmt.Sprintf("Listener with port %d and protocol %s doesn't match service %s with port %d and protocol %s",
-					listener.Port, listener.Protocol, targetService.Name, servicePort.Port, servicePort.Protocol))
+				logger.Info(fmt.Sprintf("Listener with servciePort %d and protocol %s doesn't match service %s with port %d and protocol %s",
+					listener.ServicePort, listener.Protocol, targetService.Name, servicePort.Port, servicePort.Protocol))
 			}
 		}
 	}
