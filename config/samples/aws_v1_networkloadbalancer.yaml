@@ -66,3 +66,11 @@ spec:
       fromPort: 8000
       toPort: 8000
       cidrIp: "0.0.0.0/0"
+    - protocol: TCP
+      fromPort: 8080
+      toPort: 8080
+      cidrIp: "0.0.0.0/0"
+    - protocol: TCP
+      fromPort: 8090
+      toPort: 8090
+      cidrIp: "0.0.0.0/0"
