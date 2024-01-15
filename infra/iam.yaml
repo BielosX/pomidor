@@ -101,6 +101,10 @@ Resources:
               - Effect: "Allow"
                 Action: "elasticloadbalancing:DescribeTargetGroups"
                 Resource: "*"
+              - Effect: "Allow"
+                Action:
+                  - "autoscaling:DescribeTrafficSources"
+                Resource: "*"
       AssumeRolePolicyDocument: !Sub |
         {
           "Version": "2012-10-17",

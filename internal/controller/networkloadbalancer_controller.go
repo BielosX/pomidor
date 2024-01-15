@@ -26,6 +26,7 @@ import (
 	ec2types "github.com/aws/aws-sdk-go-v2/service/ec2/types"
 	elbv2 "github.com/aws/aws-sdk-go-v2/service/elasticloadbalancingv2"
 	elb2types "github.com/aws/aws-sdk-go-v2/service/elasticloadbalancingv2/types"
+	"github.com/aws/smithy-go"
 	"github.com/thoas/go-funk"
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -96,8 +97,13 @@ func (r *NetworkLoadBalancerReconciler) deleteListeners(ctx context.Context, nlb
 		LoadBalancerArn: nlbArn,
 	})
 	if err != nil {
-		logger.Error(err, "Unable to describe NLB listeners")
-		return err
+		var elbErr *elb2types.LoadBalancerNotFoundException
+		if errors.As(err, &elbErr) {
+			return nil
+		} else {
+			logger.Error(err, "Unable to describe NLB listeners")
+			return err
+		}
 	}
 	for _, listener := range out.Listeners {
 		actions := listener.DefaultActions
@@ -133,9 +139,14 @@ func (r *NetworkLoadBalancerReconciler) getTargetGroupsArn(ctx context.Context,
 			LoadBalancerArn: nlbArn,
 			Marker:          nextToken,
 		})
+		var loadBalancerNotFound *elb2types.LoadBalancerNotFoundException
 		if err != nil {
-			logger.Error(err, "Unable to describe target groups")
-			return nil, err
+			if errors.As(err, &loadBalancerNotFound) {
+				return nil, nil
+			} else {
+				logger.Error(err, "Unable to describe target groups")
+				return nil, err
+			}
 		}
 		nextToken = out.NextMarker
 		arnList := funk.Map(out.TargetGroups, func(group elb2types.TargetGroup) string {
@@ -157,27 +168,50 @@ func (r *NetworkLoadBalancerReconciler) deleteExternalResources(ctx context.Cont
 		SecurityGroupRuleIds: []string{*clusterSgRuleId},
 	})
 	if err != nil {
-		logger.Error(err, "Unable to remove Cluster SG rule")
-		return err
+		var apiErr smithy.APIError
+		errors.As(err, &apiErr)
+		if "InvalidSecurityGroupRuleId.NotFound" == apiErr.ErrorCode() {
+			logger.Info("Cluster SG Rule probably already deleted")
+		} else {
+			logger.Error(err, "Unable to remove Cluster SG rule")
+			return err
+		}
 	}
 	out, err := r.getTargetGroupsArn(ctx, nlbArn)
 	if err != nil {
 		logger.Error(err, "Unable to fetch target group ARNs")
 		return err
 	}
-	for _, arn := range out {
-		for _, asg := range r.NodesAsgNames {
-			_, err := r.AsgClient.DetachTrafficSources(ctx, &autoscaling.DetachTrafficSourcesInput{
-				AutoScalingGroupName: &asg,
-				TrafficSources: []asgtypes.TrafficSourceIdentifier{
-					{
-						Identifier: &arn,
+	for _, asg := range r.NodesAsgNames {
+		trafficSources, err := aws.GetAsgElbV2TrafficSources(r.AsgClient, ctx, asg)
+		if err != nil {
+			logger.Error(err, fmt.Sprintf("Unable to describe traffic souces for ASG %s", asg))
+			return err
+		}
+		trafficSourceIds := funk.Map(trafficSources, func(state asgtypes.TrafficSourceState) string {
+			return *state.Identifier
+		}).([]string)
+		for _, arn := range out {
+			isAttached := false
+			for _, id := range trafficSourceIds {
+				if id == arn {
+					isAttached = true
+					break
+				}
+			}
+			if isAttached {
+				_, err := r.AsgClient.DetachTrafficSources(ctx, &autoscaling.DetachTrafficSourcesInput{
+					AutoScalingGroupName: &asg,
+					TrafficSources: []asgtypes.TrafficSourceIdentifier{
+						{
+							Identifier: &arn,
+						},
 					},
-				},
-			})
-			if err != nil {
-				logger.Error(err, fmt.Sprintf("Unable to detach target group %s", arn))
-				return err
+				})
+				if err != nil {
+					logger.Error(err, fmt.Sprintf("Unable to detach target group %s", arn))
+					return err
+				}
 			}
 		}
 	}
@@ -207,6 +241,7 @@ func (r *NetworkLoadBalancerReconciler) deleteExternalResources(ctx context.Cont
 			return err
 		}
 	}
+	logger.Info("External resources deleted")
 	return nil
 }
 
@@ -339,8 +374,14 @@ func (r *NetworkLoadBalancerReconciler) deleteSecurityGroupRules(ctx context.Con
 					SecurityGroupRuleIds: []string{*rule.SecurityGroupRuleId},
 				})
 				if err != nil {
-					logger.Error(err, fmt.Sprintf("Unable to delete SG Egress Rule with id %s", *rule.SecurityGroupRuleId))
-					return err
+					var apiErr smithy.APIError
+					errors.As(err, &apiErr)
+					if "InvalidSecurityGroupRuleId.NotFound" == apiErr.ErrorCode() {
+						logger.Info(fmt.Sprintf("SG Rule %s probably already deleted", *rule.SecurityGroupRuleId))
+					} else {
+						logger.Error(err, fmt.Sprintf("Unable to delete SG Egress Rule with id %s", *rule.SecurityGroupRuleId))
+						return err
+					}
 				}
 			} else {
 				_, err := r.Ec2Client.RevokeSecurityGroupIngress(ctx, &ec2.RevokeSecurityGroupIngressInput{
@@ -348,8 +389,14 @@ func (r *NetworkLoadBalancerReconciler) deleteSecurityGroupRules(ctx context.Con
 					SecurityGroupRuleIds: []string{*rule.SecurityGroupRuleId},
 				})
 				if err != nil {
-					logger.Error(err, fmt.Sprintf("Unable to delete SG Ingress Rule with id %s", *rule.SecurityGroupRuleId))
-					return err
+					var apiErr smithy.APIError
+					errors.As(err, &apiErr)
+					if "InvalidSecurityGroupRuleId.NotFound" == apiErr.ErrorCode() {
+						logger.Info(fmt.Sprintf("SG Rule %s probably already deleted", *rule.SecurityGroupRuleId))
+					} else {
+						logger.Error(err, fmt.Sprintf("Unable to delete SG Ingress Rule with id %s", *rule.SecurityGroupRuleId))
+						return err
+					}
 				}
 			}
 		}
