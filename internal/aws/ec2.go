@@ -4,14 +4,12 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/ec2"
 	"github.com/aws/aws-sdk-go-v2/service/ec2/types"
 	"github.com/aws/smithy-go"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 )
-
-var groupNameFilter = "group-name"
-var groupRuleTagName = "Name"
 
 func CreateSecurityGroup(ec2Client *ec2.Client,
 	ctx context.Context,
@@ -35,7 +33,7 @@ func CreateSecurityGroup(ec2Client *ec2.Client,
 			out, err := ec2Client.DescribeSecurityGroups(ctx, &ec2.DescribeSecurityGroupsInput{
 				Filters: []types.Filter{
 					{
-						Name:   &groupNameFilter,
+						Name:   aws.String("group-name"),
 						Values: []string{*groupName},
 					},
 				},
@@ -66,7 +64,7 @@ func AuthorizeSecurityGroup(ec2Client *ec2.Client,
 		ResourceType: types.ResourceTypeSecurityGroupRule,
 		Tags: []types.Tag{
 			{
-				Key:   &groupRuleTagName,
+				Key:   aws.String("Name"),
 				Value: &ruleName,
 			},
 		},
@@ -97,11 +95,10 @@ func AuthorizeSecurityGroup(ec2Client *ec2.Client,
 		errors.As(actionError, &apiErr)
 		if "InvalidPermission.Duplicate" == apiErr.ErrorCode() {
 			logger.Info("Security Group Rule already exists")
-			filter := "tag:Name"
 			out, err := ec2Client.DescribeSecurityGroupRules(ctx, &ec2.DescribeSecurityGroupRulesInput{
 				Filters: []types.Filter{
 					{
-						Name:   &filter,
+						Name:   aws.String("tag:Name"),
 						Values: []string{ruleName},
 					},
 				},

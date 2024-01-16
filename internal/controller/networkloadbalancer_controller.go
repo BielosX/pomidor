@@ -20,6 +20,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	aws2 "github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/autoscaling"
 	asgtypes "github.com/aws/aws-sdk-go-v2/service/autoscaling/types"
 	"github.com/aws/aws-sdk-go-v2/service/ec2"
@@ -42,13 +43,12 @@ import (
 	"strings"
 )
 
-var finalizerName = "networkloadbalancers.aws.pomidor/finalizer"
-var clusterTag = "Cluster"
-var managedByTag = "ManagedBy"
-var pomidor = "pomidor"
-var namespaceTag = "k8s/namespace"
-var resourceTag = "k8s/resource"
-var elbv2TrafficSourceType = "elbv2"
+const finalizerName = "networkloadbalancers.aws.pomidor/finalizer"
+const clusterTag = "Cluster"
+const managedByTag = "ManagedBy"
+const pomidor = "pomidor"
+const namespaceTag = "k8s/namespace"
+const resourceTag = "k8s/resource"
 
 // NetworkLoadBalancerReconciler reconciles a NetworkLoadBalancer object
 type NetworkLoadBalancerReconciler struct {
@@ -342,12 +342,11 @@ func (r *NetworkLoadBalancerReconciler) createEgressRule(ctx context.Context,
 func (r *NetworkLoadBalancerReconciler) describeSecurityGroupRules(ctx context.Context,
 	nlbSecurityGroupId *string,
 	nextToken *string) (*ec2.DescribeSecurityGroupRulesOutput, error) {
-	groupId := "group-id"
 	return r.Ec2Client.DescribeSecurityGroupRules(ctx, &ec2.DescribeSecurityGroupRulesInput{
 		NextToken: nextToken,
 		Filters: []ec2types.Filter{
 			{
-				Name:   &groupId,
+				Name:   aws2.String("group-id"),
 				Values: []string{*nlbSecurityGroupId},
 			},
 		},
@@ -523,9 +522,12 @@ func (r *NetworkLoadBalancerReconciler) Reconcile(ctx context.Context, req ctrl.
 	namespacedName := req.NamespacedName
 	var networkLoadBalancer awsv1.NetworkLoadBalancer
 	err := r.Get(ctx, namespacedName, &networkLoadBalancer)
-	if client.IgnoreNotFound(err) != nil {
-		logger.Error(err, "Unable to fetch NetworkLoadBalancer")
-		return ctrl.Result{}, err
+	if err != nil {
+		notFoundIgnored := client.IgnoreNotFound(err)
+		if notFoundIgnored != nil {
+			logger.Error(err, "Unable to fetch NetworkLoadBalancer")
+		}
+		return ctrl.Result{}, notFoundIgnored
 	}
 
 	out, err := r.handleFinalizer(ctx, &networkLoadBalancer)
@@ -549,19 +551,19 @@ func (r *NetworkLoadBalancerReconciler) Reconcile(ctx context.Context, req ctrl.
 	sgName := fmt.Sprintf("nlb-sg-%s", util.Sha256String(suffix)[:32])
 	commonTags := []Tag{
 		{
-			Key:   &clusterTag,
+			Key:   aws2.String(clusterTag),
 			Value: &r.ClusterName,
 		},
 		{
-			Key:   &managedByTag,
-			Value: &pomidor,
+			Key:   aws2.String(managedByTag),
+			Value: aws2.String(pomidor),
 		},
 		{
-			Key:   &namespaceTag,
+			Key:   aws2.String(namespaceTag),
 			Value: &namespacedName.Namespace,
 		},
 		{
-			Key:   &resourceTag,
+			Key:   aws2.String(resourceTag),
 			Value: &namespacedName.Name,
 		},
 	}

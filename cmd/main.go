@@ -20,6 +20,7 @@ import (
 	"context"
 	"flag"
 	"fmt"
+	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/service/autoscaling"
 	"github.com/aws/aws-sdk-go-v2/service/ec2"
@@ -64,17 +65,15 @@ func describeSubnetsWithTagKey(ec2Client *ec2.Client,
 	vpcId string,
 	tagKey string,
 	nextToken *string) (*ec2.DescribeSubnetsOutput, error) {
-	vpcFilterName := "vpc-id"
-	tagFilterName := "tag-key"
 	return ec2Client.DescribeSubnets(ctx, &ec2.DescribeSubnetsInput{
 		NextToken: nextToken,
 		Filters: []types.Filter{
 			{
-				Name:   &vpcFilterName,
+				Name:   aws.String("vpc-id"),
 				Values: []string{vpcId},
 			},
 			{
-				Name:   &tagFilterName,
+				Name:   aws.String("tag-key"),
 				Values: []string{tagKey},
 			},
 		},
@@ -104,11 +103,10 @@ func getClusterAutoscalingGroupsPage(asgClient *autoscaling.Client,
 	ctx context.Context,
 	clusterName string,
 	nextToken *string) (*autoscaling.DescribeAutoScalingGroupsOutput, error) {
-	key := "tag:eks:cluster-name"
 	return asgClient.DescribeAutoScalingGroups(ctx, &autoscaling.DescribeAutoScalingGroupsInput{
 		Filters: []asgtypes.Filter{
 			{
-				Name:   &key,
+				Name:   aws.String("tag:eks:cluster-name"),
 				Values: []string{clusterName},
 			},
 		},
