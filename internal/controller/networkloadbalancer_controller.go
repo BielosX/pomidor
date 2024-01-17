@@ -129,16 +129,13 @@ func (r *NetworkLoadBalancerReconciler) deleteListeners(ctx context.Context, nlb
 
 func (r *NetworkLoadBalancerReconciler) getTargetGroupsArn(ctx context.Context,
 	nlbArn *string) ([]string, error) {
-	var nextToken *string
-	firstPageFetched := false
 	logger := log.FromContext(ctx)
 	var result []string
-	for nextToken != nil || !firstPageFetched {
-		firstPageFetched = true
-		out, err := r.ElbClient.DescribeTargetGroups(ctx, &elbv2.DescribeTargetGroupsInput{
-			LoadBalancerArn: nlbArn,
-			Marker:          nextToken,
-		})
+	paginator := elbv2.NewDescribeTargetGroupsPaginator(r.ElbClient, &elbv2.DescribeTargetGroupsInput{
+		LoadBalancerArn: nlbArn,
+	})
+	for paginator.HasMorePages() {
+		out, err := paginator.NextPage(ctx)
 		var loadBalancerNotFound *elb2types.LoadBalancerNotFoundException
 		if err != nil {
 			if errors.As(err, &loadBalancerNotFound) {
@@ -148,7 +145,6 @@ func (r *NetworkLoadBalancerReconciler) getTargetGroupsArn(ctx context.Context,
 				return nil, err
 			}
 		}
-		nextToken = out.NextMarker
 		arnList := funk.Map(out.TargetGroups, func(group elb2types.TargetGroup) string {
 			return *group.TargetGroupArn
 		}).([]string)
@@ -339,11 +335,10 @@ func (r *NetworkLoadBalancerReconciler) createEgressRule(ctx context.Context,
 	return nil
 }
 
-func (r *NetworkLoadBalancerReconciler) describeSecurityGroupRules(ctx context.Context,
-	nlbSecurityGroupId *string,
-	nextToken *string) (*ec2.DescribeSecurityGroupRulesOutput, error) {
-	return r.Ec2Client.DescribeSecurityGroupRules(ctx, &ec2.DescribeSecurityGroupRulesInput{
-		NextToken: nextToken,
+func (r *NetworkLoadBalancerReconciler) deleteSecurityGroupRules(ctx context.Context,
+	nlbSecurityGroupId *string) error {
+	logger := log.FromContext(ctx)
+	paginator := ec2.NewDescribeSecurityGroupRulesPaginator(r.Ec2Client, &ec2.DescribeSecurityGroupRulesInput{
 		Filters: []ec2types.Filter{
 			{
 				Name:   aws2.String("group-id"),
@@ -351,21 +346,12 @@ func (r *NetworkLoadBalancerReconciler) describeSecurityGroupRules(ctx context.C
 			},
 		},
 	})
-}
-
-func (r *NetworkLoadBalancerReconciler) deleteSecurityGroupRules(ctx context.Context,
-	nlbSecurityGroupId *string) error {
-	logger := log.FromContext(ctx)
-	var nextToken *string
-	firstPageFetched := false
-	for nextToken != nil || !firstPageFetched {
-		firstPageFetched = true
-		out, err := r.describeSecurityGroupRules(ctx, nlbSecurityGroupId, nextToken)
+	for paginator.HasMorePages() {
+		out, err := paginator.NextPage(ctx)
 		if err != nil {
 			logger.Error(err, "Unable to describe security group rules")
 			return err
 		}
-		nextToken = out.NextToken
 		for _, rule := range out.SecurityGroupRules {
 			if *rule.IsEgress {
 				_, err := r.Ec2Client.RevokeSecurityGroupEgress(ctx, &ec2.RevokeSecurityGroupEgressInput{

@@ -60,13 +60,9 @@ func init() {
 	//+kubebuilder:scaffold:scheme
 }
 
-func describeSubnetsWithTagKey(ec2Client *ec2.Client,
-	ctx context.Context,
-	vpcId string,
-	tagKey string,
-	nextToken *string) (*ec2.DescribeSubnetsOutput, error) {
-	return ec2Client.DescribeSubnets(ctx, &ec2.DescribeSubnetsInput{
-		NextToken: nextToken,
+func getSubnetIdsByTagKey(ec2Client *ec2.Client, ctx context.Context, vpcId string, tagKey string) ([]string, error) {
+	var result []string
+	paginator := ec2.NewDescribeSubnetsPaginator(ec2Client, &ec2.DescribeSubnetsInput{
 		Filters: []types.Filter{
 			{
 				Name:   aws.String("vpc-id"),
@@ -78,49 +74,31 @@ func describeSubnetsWithTagKey(ec2Client *ec2.Client,
 			},
 		},
 	})
-}
-
-func getSubnetIdsByTagKey(ec2Client *ec2.Client, ctx context.Context, vpcId string, tagKey string) ([]string, error) {
-	var nextToken *string
-	firstPageFetched := false
-	var result []string
-	for nextToken != nil || !firstPageFetched {
-		out, err := describeSubnetsWithTagKey(ec2Client, ctx, vpcId, tagKey, nextToken)
+	for paginator.HasMorePages() {
+		out, err := paginator.NextPage(ctx)
 		if err != nil {
 			return nil, err
 		}
-		nextToken = out.NextToken
 		subnetIds := funk.Map(out.Subnets, func(subnet types.Subnet) string {
 			return *subnet.SubnetId
 		}).([]string)
 		result = append(result, subnetIds...)
-		firstPageFetched = true
 	}
 	return result, nil
 }
 
-func getClusterAutoscalingGroupsPage(asgClient *autoscaling.Client,
-	ctx context.Context,
-	clusterName string,
-	nextToken *string) (*autoscaling.DescribeAutoScalingGroupsOutput, error) {
-	return asgClient.DescribeAutoScalingGroups(ctx, &autoscaling.DescribeAutoScalingGroupsInput{
+func getClusterAutoscalingGroups(asgClient *autoscaling.Client, ctx context.Context, clusterName string) ([]string, error) {
+	var result []string
+	paginator := autoscaling.NewDescribeAutoScalingGroupsPaginator(asgClient, &autoscaling.DescribeAutoScalingGroupsInput{
 		Filters: []asgtypes.Filter{
 			{
 				Name:   aws.String("tag:eks:cluster-name"),
 				Values: []string{clusterName},
 			},
 		},
-		NextToken: nextToken,
 	})
-}
-
-func getClusterAutoscalingGroups(asgClient *autoscaling.Client, ctx context.Context, clusterName string) ([]string, error) {
-	var nextToken *string
-	firstPageFetched := false
-	var result []string
-	for nextToken != nil || !firstPageFetched {
-		firstPageFetched = true
-		out, err := getClusterAutoscalingGroupsPage(asgClient, ctx, clusterName, nextToken)
+	for paginator.HasMorePages() {
+		out, err := paginator.NextPage(ctx)
 		if err != nil {
 			return nil, err
 		}
