@@ -164,13 +164,13 @@ func (r *NetworkLoadBalancerReconciler) deleteExternalResources(ctx context.Cont
 			return err
 		}
 	}
-	out, err := r.getTargetGroupsArn(ctx, nlbArn)
+	tgOut, err := r.getTargetGroupsArn(ctx, nlbArn)
 	if err != nil {
 		logger.Error(err, "Unable to fetch target group ARNs")
 		return err
 	}
 	for _, asg := range r.NodesAsgNames {
-		for _, targetGroupArn := range out {
+		for _, targetGroupArn := range tgOut {
 			_, err := r.AsgClient.DetachTrafficSources(ctx, &autoscaling.DetachTrafficSourcesInput{
 				AutoScalingGroupName: &asg,
 				TrafficSources: []asgtypes.TrafficSourceIdentifier{
@@ -196,7 +196,7 @@ func (r *NetworkLoadBalancerReconciler) deleteExternalResources(ctx context.Cont
 		logger.Error(err, "Unable to delete NLB listeners")
 		return err
 	}
-	for _, tgArn := range out {
+	for _, tgArn := range tgOut {
 		_, err := r.ElbClient.DeleteTargetGroup(ctx, &elbv2.DeleteTargetGroupInput{
 			TargetGroupArn: &tgArn,
 		})
