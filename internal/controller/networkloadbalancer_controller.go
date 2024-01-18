@@ -49,6 +49,7 @@ const managedByTag = "ManagedBy"
 const pomidor = "pomidor"
 const namespaceTag = "k8s/namespace"
 const resourceTag = "k8s/resource"
+const targetGroupNotAttachedToAsg = "Trying to remove Target Groups that are not part of the group"
 
 // NetworkLoadBalancerReconciler reconciles a NetworkLoadBalancer object
 type NetworkLoadBalancerReconciler struct {
@@ -106,22 +107,12 @@ func (r *NetworkLoadBalancerReconciler) deleteListeners(ctx context.Context, nlb
 		}
 	}
 	for _, listener := range out.Listeners {
-		actions := listener.DefaultActions
 		_, err := r.ElbClient.DeleteListener(ctx, &elbv2.DeleteListenerInput{
 			ListenerArn: listener.ListenerArn,
 		})
 		if err != nil {
 			logger.Error(err, "Unable to delete listener")
 			return err
-		}
-		for _, action := range actions {
-			_, err := r.ElbClient.DeleteTargetGroup(ctx, &elbv2.DeleteTargetGroupInput{
-				TargetGroupArn: action.TargetGroupArn,
-			})
-			if err != nil {
-				logger.Error(err, "Unable to delete target group")
-				return err
-			}
 		}
 	}
 	return nil
@@ -179,33 +170,22 @@ func (r *NetworkLoadBalancerReconciler) deleteExternalResources(ctx context.Cont
 		return err
 	}
 	for _, asg := range r.NodesAsgNames {
-		trafficSources, err := aws.GetAsgElbV2TrafficSources(r.AsgClient, ctx, asg)
-		if err != nil {
-			logger.Error(err, fmt.Sprintf("Unable to describe traffic souces for ASG %s", asg))
-			return err
-		}
-		trafficSourceIds := funk.Map(trafficSources, func(state asgtypes.TrafficSourceState) string {
-			return *state.Identifier
-		}).([]string)
-		for _, arn := range out {
-			isAttached := false
-			for _, id := range trafficSourceIds {
-				if id == arn {
-					isAttached = true
-					break
-				}
-			}
-			if isAttached {
-				_, err := r.AsgClient.DetachTrafficSources(ctx, &autoscaling.DetachTrafficSourcesInput{
-					AutoScalingGroupName: &asg,
-					TrafficSources: []asgtypes.TrafficSourceIdentifier{
-						{
-							Identifier: &arn,
-						},
+		for _, targetGroupArn := range out {
+			_, err := r.AsgClient.DetachTrafficSources(ctx, &autoscaling.DetachTrafficSourcesInput{
+				AutoScalingGroupName: &asg,
+				TrafficSources: []asgtypes.TrafficSourceIdentifier{
+					{
+						Identifier: &targetGroupArn,
 					},
-				})
-				if err != nil {
-					logger.Error(err, fmt.Sprintf("Unable to detach target group %s", arn))
+				},
+			})
+			if err != nil {
+				var apiErr smithy.APIError
+				errors.As(err, &apiErr)
+				if strings.HasPrefix(apiErr.ErrorMessage(), targetGroupNotAttachedToAsg) {
+					logger.Info(fmt.Sprintf("Target group %s probably already detached from %s", targetGroupArn, asg))
+				} else {
+					logger.Error(err, fmt.Sprintf("Unable to detach target group %s", targetGroupArn))
 					return err
 				}
 			}
@@ -215,6 +195,15 @@ func (r *NetworkLoadBalancerReconciler) deleteExternalResources(ctx context.Cont
 	if err != nil {
 		logger.Error(err, "Unable to delete NLB listeners")
 		return err
+	}
+	for _, tgArn := range out {
+		_, err := r.ElbClient.DeleteTargetGroup(ctx, &elbv2.DeleteTargetGroupInput{
+			TargetGroupArn: &tgArn,
+		})
+		if err != nil {
+			logger.Error(err, "Unable to delete target group")
+			return err
+		}
 	}
 	_, err = r.ElbClient.DeleteLoadBalancer(ctx, &elbv2.DeleteLoadBalancerInput{
 		LoadBalancerArn: nlbArn,
