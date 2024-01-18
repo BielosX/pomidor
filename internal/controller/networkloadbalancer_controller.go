@@ -213,6 +213,7 @@ func (r *NetworkLoadBalancerReconciler) deleteExternalResources(ctx context.Cont
 		logger.Error(err, fmt.Sprintf("Unable to delete NLB %s", *nlbArn))
 		return err
 	}
+	logger.Info(fmt.Sprintf("Waiting for Load Balancer %s to be destroyed", *nlbArn))
 	waiter := elbv2.NewLoadBalancersDeletedWaiter(r.ElbClient)
 	err = waiter.Wait(ctx, &elbv2.DescribeLoadBalancersInput{
 		LoadBalancerArns: []string{*nlbArn},
