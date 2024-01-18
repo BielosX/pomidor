@@ -41,6 +41,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 	"strings"
+	"time"
 )
 
 const finalizerName = "networkloadbalancers.aws.pomidor/finalizer"
@@ -210,6 +211,14 @@ func (r *NetworkLoadBalancerReconciler) deleteExternalResources(ctx context.Cont
 	})
 	if err != nil {
 		logger.Error(err, fmt.Sprintf("Unable to delete NLB %s", *nlbArn))
+		return err
+	}
+	waiter := elbv2.NewLoadBalancersDeletedWaiter(r.ElbClient)
+	err = waiter.Wait(ctx, &elbv2.DescribeLoadBalancersInput{
+		LoadBalancerArns: []string{*nlbArn},
+	}, time.Minute)
+	if err != nil {
+		logger.Error(err, "LoadBalancersDeletedWaiter failed")
 		return err
 	}
 	for _, sg := range securityGroupIds {
